@@ -1,1153 +1,251 @@
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Le test de robustesse — Diagnostic · Open Lande</title>
-<meta name="description" content="30 questions pour mesurer ce qui soutient votre modèle — et ce qui pourrait céder. Autodiagnostic confidentiel.">
-<link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
-<style>
-  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: system-ui, -apple-system, sans-serif; background: #F6F0E7; }
-  @keyframes fadeUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+const SHEET_ID = "1idSg7gOfURbBdHIC-BbXdnhXZL5bzb_Zi6nuYbFJmGI";
+const SHEET_NAME = "Réponses";
 
-  /* ── IMPRESSION ── */
-  @media print {
-    body { background: #fff !important; }
-    .no-print { display: none !important; }
-    .print-only { display: block !important; }
-    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    /* Éviter les coupures dans les blocs de contenu */
-    .axe-block { page-break-inside: avoid; break-inside: avoid; }
-    .no-break { page-break-inside: avoid; break-inside: avoid; }
-    /* Saut de page avant chaque axe sauf le premier */
-    .axe-block + .axe-block { page-break-before: always; break-before: always; }
-    /* Padding A4 */
-    @page { margin: 16mm 14mm; }
-  }
-  .print-only { display: none; }
-</style>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
-</head>
-<body>
-<div id="root"></div>
-<script type="text/babel">
-const { useState, useMemo } = React;
+// ── À PERSONNALISER ──────────────────────────────────────────
+const EMAIL_ADMIN = "walter@openlande.co";        // Ton email
+const NOM_ADMIN   = "Walter";
+const URL_DIAG    = "https://openlande.co/robustesse";
+// ────────────────────────────────────────────────────────────
 
-const C = {
-  vert: "#0E4238", vertClair: "#1B5E4B",
-  ocre: "#F9B233", brique: "#ED7565",
-  creme: "#F6F0E7", sable: "#E8E0D0", blanc: "#FFFFFF",
-  gris: "#8A8579", grisFonce: "#3D3B37",
-};
-const serif = "'Libre Baskerville', Georgia, serif";
-const BASELINE = "Pour que votre organisation soit encore là dans 10 ans — durablement.";
-
-/* ═══════════════════════ MODE SWITCHER ═══════════════════════ */
-// MODE: "complet" = 30 questions (parcours FFB) | "magnet" = 12 questions (teaser)
-const MODE_PARAM = new URLSearchParams(window.location.search).get("mode") || "complet";
-
-/* ═══════════════════════ CONFIG COLLECTE ═══════════════════════ */
-// Remplacer par l'URL de votre Google Apps Script déployé
-const SHEETS_URL = "https://script.google.com/macros/s/AKfycbzo7fJ7SUElyPKVbrZGI8_2uw8FvqLIr1Pu3SGr7XsAGMZllgEse8U97q8WKiuXJHVHRQ/exec";
-
-async function sendToSheets(payload) {
+function doPost(e) {
   try {
-    await fetch(SHEETS_URL, {
-      method: "POST",
-      mode: "no-cors",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-  } catch(e) { console.warn("Collecte non disponible", e); }
-}
+    const data = JSON.parse(e.postData.contents);
+    const ss = SpreadsheetApp.openById(SHEET_ID);
 
-/* ═══════════════════════ PROCEDURAL CERNE ═══════════════════════ */
-
-function ringPath(cx, cy, baseR, seed, nPts) {
-  const pts = [];
-  for (let i = 0; i <= nPts; i++) {
-    const a = (i / nPts) * Math.PI * 2;
-    const n = Math.sin(a*3+seed*7.3)*0.12 + Math.sin(a*5+seed*13.1)*0.07
-            + Math.sin(a*7+seed*3.7)*0.04 + Math.sin(a*2+seed*19.9)*0.09;
-    const r = baseR * (1 + n);
-    pts.push([cx + r*Math.cos(a), cy + r*Math.sin(a)]);
-  }
-  let d = "M "+pts[0][0]+" "+pts[0][1];
-  for (let i = 1; i < pts.length; i++) {
-    const p = pts[i-1], c = pts[i];
-    d += " Q "+p[0]+" "+p[1]+" "+((p[0]+c[0])/2)+" "+((p[1]+c[1])/2);
-  }
-  return d + " Z";
-}
-
-function Cerne({ size, rings, sw, op, cx, cy, maxR, clip }) {
-  const paths = useMemo(() => {
-    const r = [];
-    for (let i = 0; i < rings; i++) {
-      const t = i/(rings-1);
-      const rad = 4 + t*maxR;
-      const seed = i*1.37+0.5;
-      const accent = (i%4===2||i%5===3) && i>2;
-      const w = accent ? sw*1.8 : sw*(0.5+t*0.8);
-      const o = accent ? op*1.4 : op*(0.3+t*0.7);
-      r.push({ d: ringPath(cx,cy,rad,seed,64+Math.floor(t*32)), sw: Math.min(w,2.2), op: Math.min(o,0.9) });
+    // ── 1. ÉCRITURE DANS LE SHEET ──
+    let sheet = ss.getSheetByName(SHEET_NAME);
+    if (!sheet) {
+      sheet = ss.insertSheet(SHEET_NAME);
+      sheet.appendRow([
+        "Date", "Mode", "Email", "Zone", "Score total", "Score max",
+        "Concentration", "Visibilité", "Exposition", "Évolution", "Capital",
+        "Question ouverte 1", "Question ouverte 2", "Réaction finale"
+      ]);
+      sheet.getRange(1, 1, 1, 14).setFontWeight("bold").setBackground("#0E4238").setFontColor("#FFFFFF");
+      sheet.setFrozenRows(1);
     }
-    return r;
-  }, [size, rings, sw, op, cx, cy, maxR]);
-  const cid = clip ? "cc"+Math.random().toString(36).substr(2,4) : null;
-  return (
-    <svg viewBox={"0 0 "+size+" "+size} width="100%" style={{ display: "block" }}>
-      {clip && <defs><clipPath id={cid}><rect x={cx} y="0" width={size/2} height={size}/></clipPath></defs>}
-      <g clipPath={cid ? "url(#"+cid+")" : undefined}>
-        {paths.map((p,i) => <path key={i} d={p.d} fill="none" stroke={C.vert} strokeWidth={p.sw} opacity={p.op}/>)}
-      </g>
-    </svg>
-  );
-}
 
-/* ═══════════════════════ COMMENTAIRES PAR AXE ═══════════════════════ */
+    sheet.appendRow([
+      data.timestamp,
+      data.mode,
+      data.email,
+      data.zone,
+      data.score_total,
+      data.score_max,
+      data.axe_concentration,
+      data.axe_visibilite,
+      data.axe_exposition,
+      data.axe_evolution,
+      data.axe_capital,
+      data.open1,
+      data.open2,
+      data.open3
+    ]);
 
-const AXE_DATA = {
-  concentration: {
-    description: "Cet axe mesure votre niveau de dépendance vis-à-vis d'acteurs clés : un client qui pèse trop lourd, un fournisseur sans alternative, une compétence dans une seule tête. La concentration n'est pas un problème en soi — c'est l'absence de plan B qui fragilise. Une PME du bâtiment peut très bien travailler à 40 % avec un client donneur d'ordres, à condition d'avoir anticipé ce qui se passerait s'il disparaissait demain.",
-    niveaux: {
-      fort: {
-        titre: "Dépendances identifiées et maîtrisées",
-        texte: "Vous avez cartographié vos dépendances critiques et réduit les points de défaillance uniques. C'est rare — et c'est une base de robustesse réelle. La diversification que vous avez construite vous donne des marges de manœuvre que la majorité de vos concurrents n'ont pas.",
-        signaux: [],
-        exemples: "Une entreprise de menuiserie qui travaille avec 8 donneurs d'ordres différents, dont aucun ne dépasse 20 % du CA, résiste bien mieux à la perte d'un contrat. Idem pour un maçon qui a formé deux compagnons aux techniques clés de l'atelier.",
-        pistes: ["Documenter les plans B sur vos 2-3 dépendances les plus critiques restantes", "Tester annuellement ces scénarios en Codir (« et si X disparaissait ? »)", "Surveiller l'évolution de la concentration client chaque trimestre"],
-      },
-      moyen: {
-        titre: "Dépendances partiellement maîtrisées",
-        texte: "Vous avez des dépendances concentrées que vous n'avez pas encore pleinement sécurisées. Elles ne sont pas forcément dangereuses aujourd'hui — mais elles le deviennent en cas de choc. Le risque principal n'est pas la dépendance elle-même, c'est l'absence de scénario de rechange.",
-        signaux: ["Un client représente plus de 25 % du CA sans contrat pluriannuel", "Un fournisseur critique qui n'a pas d'équivalent identifié sur le marché local", "Une compétence technique rare détenue par une seule personne dans l'équipe"],
-        exemples: "Une entreprise de plomberie-chauffage très dépendante d'un grossiste régional a vu ses marges s'effondrer lors d'une rupture de stock en 2022 — faute d'avoir noué des relations préalables avec d'autres fournisseurs.",
-        pistes: ["Identifier vos 3 dépendances les plus critiques et formaliser un plan B pour chacune", "Initier des relations commerciales avec au moins un fournisseur alternatif par famille critique", "Cartographier les compétences rares et lancer une démarche de transmission interne"],
-      },
-      faible: {
-        titre: "Dépendances fortes — priorité urgente",
-        texte: "Votre modèle repose sur des concentrations critiques non sécurisées. La perte d'un acteur clé — client principal, fournisseur unique, collaborateur central — pourrait déclencher un effet domino difficile à stopper. Ce n'est pas une question de probabilité : c'est une question de quand.",
-        signaux: ["Un seul client représente plus de 50 % du CA", "Plusieurs fournisseurs critiques sans alternative identifiée", "Des compétences clés dans une ou deux têtes, sans documentation ni transmission", "Une dépendance forte aux aides publiques sans scénario d'après"],
-        exemples: "En 2020, plusieurs artisans très dépendants des chantiers hôteliers ont vu leur CA fondre de 70 % en deux mois. Ceux qui avaient développé une activité complémentaire (rénovation logement, marchés publics) ont traversé la crise sans dommages structurels.",
-        pistes: ["Cartographier toutes vos dépendances critiques sur une matrice impact × probabilité", "Engager immédiatement une démarche de diversification client (cible : aucun client > 30 %)", "Identifier et former un binôme sur chaque compétence critique", "Simuler en Codir la perte de votre client ou fournisseur principal"],
-      },
-    },
-  },
-  visibilite: {
-    description: "Cet axe mesure votre capacité à voir ce qui se passe réellement dans votre chaîne de valeur — au-delà de votre activité directe. Qui dépend de vous ? De qui dépendez-vous sans le savoir pleinement ? Qu'est-ce que vos clients voient de vous que vous ne voyez pas vous-même ? Seules 6 % des entreprises ont une visibilité complète sur leur chaîne. Les 94 % restants naviguent avec des angles morts — et c'est souvent là que les fractures apparaissent.",
-    niveaux: {
-      fort: {
-        titre: "Bonne visibilité sur la chaîne",
-        texte: "Vous avez une lecture claire de votre chaîne de valeur — qui dépend de qui, qui capte quoi, ce qui vous différencie vraiment. Cette visibilité vous permet d'anticiper les évolutions plutôt que de les subir. C'est un actif stratégique que beaucoup de PME n'ont pas.",
-        signaux: [],
-        exemples: "Une entreprise de charpente qui connaît ses fournisseurs de rang 2 (les scieries approvisionnant ses négoces) a pu anticiper la flambée des prix du bois en 2021 et sécuriser ses stocks plusieurs mois à l'avance.",
-        pistes: ["Approfondir la connaissance des maillons aval (que font vos clients de ce que vous livrez ?)", "Formaliser votre différenciation dans un document partagé au Codir", "Mettre en place une veille légère sur les évolutions de vos fournisseurs clés"],
-      },
-      moyen: {
-        titre: "Visibilité partielle — zones floues à éclairer",
-        texte: "Vous avez une bonne connaissance de votre activité directe, mais des maillons de votre chaîne restent flous. Ce que vous ne voyez pas, vous ne pouvez pas le protéger. Et dans un secteur où les chaînes d'approvisionnement sont de plus en plus complexes, ces angles morts coûtent.",
-        signaux: ["Vous ne connaissez pas les conditions de vos fournisseurs de rang 2", "Vous ne savez pas précisément pourquoi vos clients restent (ou partent)", "Votre différenciation est ressentie mais pas formalisée ni utilisée commercialement"],
-        exemples: "Un électricien qui ne sait pas que son grossiste s'approvisionne lui-même chez un unique fabricant asiatique découvre sa vraie dépendance — non pas lors d'un audit, mais lors d'une rupture de stock à 3 mois.",
-        pistes: ["Réaliser un atelier de cartographie de chaîne de valeur avec votre Codir", "Interroger directement 5 clients fidèles sur les raisons réelles de leur fidélité", "Identifier et tester votre différenciation concurrentielle sur un rayon de 100 km"],
-      },
-      faible: {
-        titre: "Angles morts importants — risques invisibles",
-        texte: "Votre chaîne de valeur a des angles morts significatifs. Ce que vous ne voyez pas aujourd'hui peut devenir une fracture demain. Les entreprises les plus fragiles ne sont pas celles qui ignorent les risques connus — ce sont celles qui ne voient pas les risques qui se forment silencieusement dans leur chaîne.",
-        signaux: ["Aucune cartographie formelle de la chaîne d'approvisionnement", "Pas de réponse claire à « pourquoi vos clients restent »", "Utilisation numérique très limitée — faible traçabilité de l'activité", "Méconnaissance des critères environnementaux dans les appels d'offres"],
-        exemples: "En 2023, plusieurs PME du gros œuvre ont perdu des marchés publics faute d'avoir compris que les critères RSE représentaient désormais 20 à 30 % de la note. Ce n'était pas une surprise — c'était une information disponible que personne ne regardait.",
-        pistes: ["Lancer une cartographie de chaîne de valeur avec votre équipe Codir (3h suffisent)", "Mettre en place un suivi trimestriel de la satisfaction et des raisons de départ des clients", "Former un référent numérique dans l'équipe pour améliorer la traçabilité", "Se rapprocher d'une fédération professionnelle pour mieux lire les évolutions réglementaires"],
-      },
-    },
-  },
-  exposition: {
-    description: "Cet axe mesure votre exposition aux risques physiques et réglementaires qui vont s'intensifier dans les 10 prochaines années : hausse des coûts énergétiques et des matériaux, risques climatiques sur les chantiers et les sites, durcissement réglementaire (RE2020, bilan carbone, traçabilité des déchets). Ces risques ne sont pas hypothétiques — ils sont en cours. La question n'est pas « si » ils vous atteindront, mais « quand » et « à quelle vitesse ».",
-    niveaux: {
-      fort: {
-        titre: "Exposition identifiée et partiellement traitée",
-        texte: "Vous avez commencé à intégrer les contraintes physiques et réglementaires dans vos décisions. C'est une longueur d'avance significative sur la majorité des PME du secteur. Vous avez réduit votre vulnérabilité aux chocs prévisibles — reste à travailler les chocs moins visibles.",
-        signaux: [],
-        exemples: "Une PME de couverture qui a investi dans une flotte de véhicules électriques et réduit sa consommation d'énergie sur son atelier a absorbé la flambée des prix du carburant en 2022 sans impact majeur sur sa marge.",
-        pistes: ["Finaliser le bilan carbone si ce n'est pas encore fait", "Anticiper les prochaines échéances réglementaires (traçabilité déchets 2025, RE2020 étapes suivantes)", "Évaluer l'assurabilité de vos chantiers en zones à risque argiles ou inondation"],
-      },
-      moyen: {
-        titre: "Exposition réelle — intégration à renforcer",
-        texte: "Vous percevez les risques physiques et réglementaires, mais ils ne sont pas encore pleinement intégrés à votre stratégie. Vous êtes dans la posture du « on verra bien » — ce qui fonctionne tant que les chocs restent graduels. Mais les prochaines années s'annoncent moins linéaires.",
-        signaux: ["Pas de plan canicule formalisé pour les équipes de chantier", "Coût carbone de l'activité non calculé", "Incertitude sur l'assurabilité en zones à risque", "Réglementation RE2020 ou RSE perçue comme contrainte et non comme opportunité"],
-        exemples: "La marge nette des PME du bâtiment est de 2 à 4 %. Un doublement du coût d'un matériau ou de l'énergie sans capacité d'ajustement tarifaire efface cette marge en quelques mois. Plusieurs entreprises de second œuvre l'ont vécu en 2022-2023.",
-        pistes: ["Réaliser un audit énergétique de l'activité (atelier, parc de véhicules, chantiers)", "Formaliser un plan canicule pour les équipes terrain d'ici l'été", "Identifier 2-3 matériaux critiques et cartographier les alternatives biosourcées ou locales", "Calculer l'impact d'une hausse de 30 % de l'énergie sur votre résultat"],
-      },
-      faible: {
-        titre: "Forte exposition — urgence stratégique",
-        texte: "Votre activité est significativement exposée à des risques physiques et réglementaires que vous n'avez pas encore intégrés. Dans un secteur où la marge nette est de 2 à 4 %, les chocs extérieurs (coût des matériaux, énergie, sinistres, obligations réglementaires nouvelles) peuvent rapidement menacer la viabilité du modèle. Ce n'est pas une question d'écologie — c'est une question de survie économique.",
-        signaux: ["Aucune évaluation des risques climatiques sur les sites et chantiers", "Forte dépendance à l'énergie ou aux matériaux sans alternative ni couverture", "Méconnaissance des obligations réglementaires à venir (bilan RSE clients, traçabilité déchets)", "Pas de plan d'adaptation pour les scénarios à +2°C"],
-        exemples: "En zone argiles, les primes d'assurance dommages-ouvrage ont augmenté de 15 à 25 % en deux ans. Des entreprises qui n'avaient pas évalué ce risque se retrouvent à répercuter ces hausses sur leurs clients — ou à rogner davantage sur une marge déjà fine.",
-        pistes: ["Réaliser immédiatement une cartographie des risques climatiques (inondation, argiles, canicule) sur vos zones d'activité", "Chiffrer l'impact d'une hausse de 50 % des coûts énergétiques sur votre résultat", "Vous rapprocher de votre fédération professionnelle pour anticiper les obligations RSE à 3 ans", "Identifier un premier investissement d'adaptation à fort retour (isolation atelier, véhicule électrique, matériaux biosourcés)"],
-      },
-    },
-  },
-  evolution: {
-    description: "Cet axe mesure votre capacité à évoluer avant d'y être contraint — à anticiper les changements de marché plutôt qu'à les subir. Le bâtiment traverse une mutation profonde : baisse du neuf, montée en puissance de la rénovation, digitalisation des process, nouveaux matériaux, nouvelles attentes clients. Les entreprises robustes ne sont pas celles qui font tout juste — ce sont celles qui bougent avant que la pression les y oblige.",
-    niveaux: {
-      fort: {
-        titre: "Capacité d'adaptation réelle",
-        texte: "Vous anticipez les évolutions de votre marché et vous positionnez avant d'y être contraints. Cette posture proactive est votre meilleure assurance contre les chocs futurs. Vous avez probablement déjà traversé des mutations sans dommages majeurs — et vous savez comment vous y prendre.",
-        signaux: [],
-        exemples: "Des PME de maçonnerie qui se sont positionnées sur la rénovation énergétique dès 2018-2019 ont vu leur carnet de commandes exploser en 2022-2023, quand leurs confrères restés sur le neuf faisaient face à l'effondrement des mises en chantier.",
-        pistes: ["Formaliser votre processus de veille stratégique et le partager au Codir", "Identifier 2-3 signaux faibles qui pourraient devenir des opportunités dans 3-5 ans", "Tester un nouveau marché ou une nouvelle offre en mode pilote (budget limité, apprentissage rapide)"],
-      },
-      moyen: {
-        titre: "Lucidité sans passage à l'action",
-        texte: "Vous percevez les évolutions de votre marché mais peinez à vous positionner concrètement. L'écart entre la lucidité et l'action est votre principal point de travail. Ce n'est pas un problème de vision — c'est souvent un problème de priorité, de temps, ou de confiance dans la direction à prendre.",
-        signaux: ["Des évolutions de marché identifiées mais sans réponse stratégique formalisée", "Le Codir n'a pas simulé de scénario de crise ou de pivot depuis plus d'un an", "La rénovation énergétique est perçue comme une opportunité sans positionnement clair", "La grille tarifaire n'a pas bougé depuis plus de 18 mois malgré la hausse des coûts"],
-        exemples: "Beaucoup de dirigeants savent que la maquette numérique va devenir incontournable — mais seulement 35 % des PME du bâtiment l'utilisent aujourd'hui. L'écart entre savoir et faire est le symptôme classique d'une organisation en position d'attente.",
-        pistes: ["Organiser une demi-journée Codir dédiée aux scénarios d'évolution à 3-5 ans", "Choisir un sujet d'expérimentation concret (un marché, un outil, un partenariat) et se donner 6 mois", "Réviser la grille tarifaire et la politique commerciale pour refléter les coûts réels", "Identifier un référent interne sur la rénovation énergétique et lui donner du temps"],
-      },
-      faible: {
-        titre: "Posture réactive — risque d'obsolescence",
-        texte: "Votre organisation réagit aux chocs plutôt qu'elle ne les anticipe. Dans un secteur qui se transforme rapidement — baisse du neuf, nouvelles réglementations, digitalisation, biosourcés — cette posture réactive augmente le risque d'être pris de court. Les entreprises qui n'ont pas anticipé la chute des mises en chantier en 2023 ont subi ; celles qui avaient diversifié ont traversé.",
-        signaux: ["Aucun scénario de crise ou de pivot simulé depuis plus de 2 ans", "Le marché du neuf représente plus de 50 % du CA sans plan de diversification", "Pas de positionnement clair sur la rénovation énergétique", "Grille tarifaire non révisée depuis plus de 2 ans", "Utilisation numérique très faible — risque sur les marchés publics futurs"],
-        exemples: "En 2024, les mises en chantier de logements neufs ont chuté de 100 000 unités. Des entreprises qui ne travaillaient que sur le neuf ont perdu 30 à 50 % de leur activité en 18 mois. Celles qui avaient anticipé en développant une offre rénovation ont compensé.",
-        pistes: ["Organiser d'urgence une session Codir de scénarisation stratégique (que faisons-nous si le neuf chute encore de 20 % ?)", "Identifier 2 ou 3 marchés de diversification réalistes et les tester dans les 6 mois", "Se former ou recruter sur la rénovation énergétique — c'est le marché de la décennie dans le bâtiment", "Mettre en place une revue stratégique trimestrielle pour sortir de la posture réactive"],
-      },
-    },
-  },
-  capital: {
-    description: "Cet axe mesure ce qui soutient votre organisation au-delà du bilan comptable : les savoir-faire rares, la réputation construite année après année, les relations de confiance avec clients, partenaires et équipes, et la raison d'être qui fait que vos meilleurs éléments restent. Ce capital immatériel est souvent la vraie source de différenciation d'une PME — et paradoxalement, c'est le moins documenté, le moins transmis, et le plus vulnérable en cas de départ ou de crise.",
-    niveaux: {
-      fort: {
-        titre: "Capital immatériel identifié et activé",
-        texte: "Vous avez identifié ce qui fait la vraie valeur de votre organisation et vous l'activez consciemment — dans vos recrutements, vos relations clients, vos choix stratégiques. Ce capital est votre meilleure défense contre la concurrence par les prix. Il se renforce dans le temps si vous l'entretenez.",
-        signaux: [],
-        exemples: "Une entreprise de charpente-ossature bois qui a formalisé ses savoir-faire en fiches techniques partagées, mis en place un système de tutorat interne et construit une réputation sur la rénovation patrimoniale attire des clients qui ne négocient pas sur le prix — et des compagnons qui ne regardent pas les offres concurrentes.",
-        pistes: ["Documenter et partager les savoir-faire critiques dans un format accessible à toute l'équipe", "Évaluer l'attractivité de l'entreprise pour les profils que vous souhaitez recruter dans 3 ans", "Travailler la transmission de la réputation : elle ne doit pas reposer que sur le dirigeant"],
-      },
-      moyen: {
-        titre: "Capital réel mais insuffisamment formalisé",
-        texte: "Votre organisation a construit un capital immatériel réel — des compétences, une réputation, des relations — mais il n'est pas suffisamment formalisé ni transmissible. Il repose trop sur des personnes clés et pas assez sur des systèmes. Si ces personnes partent, une partie de ce capital part avec elles.",
-        signaux: ["Des savoir-faire critiques dans une ou deux têtes, sans documentation", "Une réputation portée surtout par le dirigeant — fragile en cas de cession", "Des relations clients solides mais peu entretenues formellement", "Difficulté à expliquer en quoi vous êtes vraiment différents de vos concurrents"],
-        exemples: "Le turn-over dans le bâtiment est d'environ 30 % par an. Une entreprise qui perd 3 collaborateurs expérimentés en 18 mois sans avoir documenté leurs pratiques perd aussi une partie de ses méthodes, de sa qualité, et de sa réputation — sans s'en rendre compte immédiatement.",
-        pistes: ["Lancer un chantier de documentation des savoir-faire critiques (fiches méthode, tutoriels vidéo)", "Formaliser ce qui fait votre différence en 3 phrases — et le tester auprès de vos clients et équipes", "Mettre en place des entretiens réguliers avec les collaborateurs clés pour comprendre ce qui les retient", "Préparer un plan de transmission si vous envisagez une cession dans les 5-10 ans"],
-      },
-      faible: {
-        titre: "Capital immatériel à construire — fragilité structurelle",
-        texte: "Votre capital immatériel n'est pas identifié, protégé ni transmis. Dans un secteur où le recrutement est difficile (71,5 % des recrutements sont jugés difficiles dans le BTP), où la réputation est le principal moteur commercial, et où la transmission d'entreprise est un enjeu majeur pour 30 % des dirigeants de plus de 55 ans, cette fragilité est structurelle. Elle ne se voit pas au bilan — elle se voit quand on cherche à céder, à recruter, ou à traverser une crise.",
-        signaux: ["Difficulté à recruter sans comprendre pourquoi", "Turn-over élevé sans analyse des causes", "Réputation non travaillée — clients historiques non entretenus", "Aucune réflexion sur la transmissibilité de l'entreprise", "Pas de formulation claire de la raison d'être ou de la différenciation"],
-        exemples: "Des PME du bâtiment qui n'ont pas travaillé leur marque employeur peinent à recruter — alors que des concurrents de taille similaire qui ont mis en avant leur culture d'entreprise, leurs projets et leurs valeurs reçoivent des candidatures spontanées. La différence n'est pas le salaire — c'est le récit.",
-        pistes: ["Organiser une session de travail avec l'équipe pour identifier ce qui vous rend uniques", "Lancer une démarche de marque employeur simple : témoignages équipe, réseaux sociaux, bouche-à-oreille", "Documenter les savoir-faire clés sous forme accessible (fiches, vidéos courtes)", "Engager une réflexion sur la transmissibilité — même si la cession est lointaine, c'est une discipline utile maintenant"],
-      },
-    },
-  },
-};
+    // ── 2. EMAIL À L'ADMIN ──
+    envoyerEmailAdmin(data);
 
-// Compatibilité avec l'ancien format court
-const AXE_COMMENTS = Object.fromEntries(
-  Object.entries(AXE_DATA).map(([key, data]) => [
-    key,
-    Object.fromEntries(
-      Object.entries(data.niveaux).map(([lvl, n]) => [lvl, n.texte])
-    )
-  ])
-);
+    // ── 3. EMAIL AU PARTICIPANT (si email fourni) ──
+    if (data.email && data.email !== "(anonyme)" && data.email.includes("@")) {
+      envoyerEmailParticipant(data);
+    }
 
-function getAxeLevel(pct) {
-  if (pct >= 0.65) return "fort";
-  if (pct >= 0.35) return "moyen";
-  return "faible";
-}
+    return ContentService
+      .createTextOutput(JSON.stringify({ status: "ok" }))
+      .setMimeType(ContentService.MimeType.JSON);
 
-/* ═══════════════════════ AXES ═══════════════════════ */
-
-const AXES = [
-  { key: "concentration", short: "Concentration", label: "Concentration & dépendances" },
-  { key: "visibilite",    short: "Visibilité",    label: "Visibilité & chaîne de valeur" },
-  { key: "exposition",    short: "Exposition",    label: "Exposition physique & ressources" },
-  { key: "evolution",     short: "Évolution",     label: "Capacité d'évolution" },
-  { key: "capital",       short: "Capital",       label: "Capital immatériel & potentiel" },
-];
-
-/* ═══════════════════════ QUESTIONS — BANQUE COMPLÈTE ═══════════════════════ */
-
-const ALL_QUESTIONS = [
-
-  /* ── AXE 1 : Concentration & dépendances ── */
-  { id:1, axe:"concentration", magnet:true,
-    text:"Quel pourcentage de votre chiffre d'affaires représente votre premier client ?",
-    options:[
-      {label:"Moins de 10 %", score:5},
-      {label:"Entre 10 et 25 %", score:3},
-      {label:"Entre 25 et 50 %", score:1},
-      {label:"Plus de 50 %", score:0},
-    ]},
-  { id:2, axe:"concentration", magnet:false,
-    text:"Combien de vos fournisseurs critiques n'ont aucune alternative identifiée aujourd'hui ?",
-    options:[
-      {label:"Aucun — tout est diversifié", score:5},
-      {label:"1 fournisseur critique sans alternative", score:3},
-      {label:"2 à 3 fournisseurs sans alternative", score:1},
-      {label:"Plus de 3, ou je ne sais pas", score:0},
-    ]},
-  { id:3, axe:"concentration", magnet:false,
-    text:"Quel pourcentage de votre CA dépend d'aides publiques ou de dispositifs d'État — MaPrimeRénov', marchés publics, subventions ?",
-    note:"620 000 dossiers MaPrimeRénov' représentaient 3 Md€ en 2024.",
-    options:[
-      {label:"Moins de 10 % — activité autonome", score:5},
-      {label:"Entre 10 et 30 %", score:3},
-      {label:"Entre 30 et 60 %", score:1},
-      {label:"Plus de 60 %, ou je ne sais pas précisément", score:0},
-    ]},
-  { id:4, axe:"concentration", magnet:true,
-    text:"Si votre fournisseur principal s'arrêtait demain, qui appelleriez-vous en premier — et avez-vous un plan B identifié ?",
-    options:[
-      {label:"Oui, un plan B documenté et testé", score:5},
-      {label:"Oui, une idée mais pas formalisée", score:3},
-      {label:"On improviserait", score:1},
-      {label:"Je n'ai pas de réponse immédiate", score:0},
-    ]},
-  { id:5, axe:"concentration", magnet:false,
-    text:"Quelle compétence critique pour votre activité ne tient que sur une seule personne dans votre équipe ?",
-    options:[
-      {label:"Aucune — tout est dupliqué ou documenté", score:5},
-      {label:"1 compétence critique dans une seule tête", score:3},
-      {label:"2 à 3 compétences non dupliquées", score:1},
-      {label:"Plus de 3, ou je ne sais pas vraiment", score:0},
-    ]},
-  { id:6, axe:"concentration", magnet:false,
-    text:"Quelle part de votre CA dépend du foncier neuf ou des mises en chantier de logements ?",
-    note:"– 100 000 mises en chantier enregistrées en 2024.",
-    options:[
-      {label:"Moins de 10 % — activité diversifiée", score:5},
-      {label:"Entre 10 et 30 %", score:3},
-      {label:"Entre 30 et 60 %", score:1},
-      {label:"Plus de 60 %, ou c'est mon cœur de métier", score:0},
-    ]},
-
-  /* ── QUESTION OUVERTE 1 ── */
-  { id:"open1", type:"open",
-    text:"En une phrase : quel est le sujet stratégique que votre Codir n'a jamais pris le temps de poser sur la table ?" },
-
-  /* ── AXE 2 : Visibilité & chaîne de valeur ── */
-  { id:7, axe:"visibilite", magnet:true,
-    text:"Connaissez-vous vos fournisseurs de rang 2 — les fournisseurs de vos fournisseurs — sur vos approvisionnements critiques ?",
-    note:"Seules 6 % des entreprises ont une visibilité complète sur leur chaîne d'approvisionnement.",
-    options:[
-      {label:"Oui, sur tous nos approvisionnements critiques", score:5},
-      {label:"Partiellement, sur quelques maillons", score:3},
-      {label:"Très peu ou pas du tout", score:1},
-      {label:"Je ne sais pas ce que ça signifie concrètement", score:0},
-    ]},
-  { id:8, axe:"visibilite", magnet:false,
-    text:"Savez-vous pourquoi vos clients restent — fidélité réelle ou simple absence d'alternative ?",
-    options:[
-      {label:"Oui, on le sait et on l'exploite activement", score:5},
-      {label:"On a une idée mais sans vraiment l'avoir vérifié", score:3},
-      {label:"On suppose, mais ce n'est pas formalisé", score:1},
-      {label:"Non, ou on n'y a pas vraiment réfléchi", score:0},
-    ]},
-  { id:9, axe:"visibilite", magnet:false,
-    text:"Vos 5 derniers appels d'offres publics comportaient-ils des critères environnementaux ou sociaux ?",
-    note:"100 % des marchés publics devront intégrer des critères environnementaux d'ici 2026.",
-    options:[
-      {label:"Oui — nous y répondons systématiquement", score:5},
-      {label:"Oui — mais nous y répondons partiellement", score:3},
-      {label:"Oui — mais nous ne savons pas y répondre", score:1},
-      {label:"Non, ou nous ne répondons pas aux marchés publics", score:0},
-    ]},
-  { id:10, axe:"visibilite", magnet:false,
-    text:"Pouvez-vous nommer ce que vous faites que personne d'autre ne sait faire dans un rayon de 100 km ?",
-    options:[
-      {label:"Oui, clairement identifié et utilisé commercialement", score:5},
-      {label:"Oui, mais pas formalisé ni vraiment utilisé", score:3},
-      {label:"Vaguement — sans pouvoir le nommer précisément", score:1},
-      {label:"Non, on est un acteur parmi d'autres", score:0},
-    ]},
-  { id:11, axe:"visibilite", magnet:false,
-    text:"Qui gagne de l'argent quand vous en gagnez — et savez-vous qui capte de la valeur dans votre chaîne ?",
-    options:[
-      {label:"Oui, on a cartographié les bénéficiaires réels", score:5},
-      {label:"On a une idée, sans cartographie précise", score:3},
-      {label:"On sait que des intermédiaires capturent de la valeur, sans savoir combien", score:1},
-      {label:"Non, on n'a pas cette visibilité", score:0},
-    ]},
-  { id:12, axe:"visibilite", magnet:true,
-    text:"Utilisez-vous des outils numériques (maquette numérique, logiciels de chantier, tablettes) de manière courante sur vos chantiers ?",
-    note:"35 % des PME du bâtiment utilisent la maquette numérique.",
-    options:[
-      {label:"Oui, systématiquement et les équipes sont formées", score:5},
-      {label:"Oui, sur certains chantiers ou pour certaines fonctions", score:3},
-      {label:"Peu — encore très majoritairement papier", score:1},
-      {label:"Non, ou je ne vois pas l'intérêt", score:0},
-    ]},
-
-  /* ── AXE 3 : Exposition physique & ressources ── */
-  { id:13, axe:"exposition", magnet:false,
-    text:"Vos chantiers, dépôts ou sites de production sont-ils exposés à des risques climatiques — inondation, retrait-gonflement des argiles, canicule ?",
-    note:"Les assurances dommages-ouvrage augmentent de 15 à 25 % en zones argiles.",
-    options:[
-      {label:"Non, ou risques évalués et traités", score:5},
-      {label:"Possiblement, mais pas évalué précisément", score:3},
-      {label:"Oui, en zone à risque sans plan d'adaptation", score:1},
-      {label:"Je ne sais pas", score:0},
-    ]},
-  { id:14, axe:"exposition", magnet:true,
-    text:"Si le coût d'une matière première ou de l'énergie doublait dans les 12 prochains mois, quel serait l'impact sur votre rentabilité ?",
-    note:"La marge nette des PME du bâtiment est de 2 à 4 %.",
-    options:[
-      {label:"Faible — nous avons des marges ou des alternatives", score:5},
-      {label:"Significatif mais gérable avec des ajustements", score:3},
-      {label:"Fort — notre rentabilité serait sérieusement menacée", score:1},
-      {label:"Critique — notre modèle ne tiendrait pas", score:0},
-    ]},
-  { id:15, axe:"exposition", magnet:false,
-    text:"Avez-vous un plan canicule pour vos équipes de chantier ?",
-    note:"23 à 30 jours de canicule supplémentaires par an estimés en France d'ici 2050.",
-    options:[
-      {label:"Oui, formalisé et connu des équipes", score:5},
-      {label:"Des pratiques informelles, sans document", score:3},
-      {label:"Non, mais on y pense", score:1},
-      {label:"Non, et on ne l'a pas anticipé", score:0},
-    ]},
-  { id:16, axe:"exposition", magnet:false,
-    text:"Savez-vous ce que représentent vos déchets de chantier — coût, volume, destination finale ?",
-    note:"42 Mt de déchets BTP produits par an en France.",
-    options:[
-      {label:"Oui — coût, volume et filières identifiés", score:5},
-      {label:"Partiellement — on sait le coût mais pas les filières", score:3},
-      {label:"On sait qu'on en produit beaucoup, sans plus de précision", score:1},
-      {label:"Non, ou la traçabilité numérique obligatoire nous pose problème", score:0},
-    ]},
-  { id:17, axe:"exposition", magnet:false,
-    text:"Avez-vous déjà calculé le poids carbone de votre activité — vos matériaux, vos déplacements, vos chantiers ?",
-    note:"Seuil carbone réglementaire : – 22 % d'ici 2031.",
-    options:[
-      {label:"Oui — bilan carbone réalisé et intégré à nos décisions", score:5},
-      {label:"Partiellement — quelques estimations sans bilan formalisé", score:3},
-      {label:"Non, mais on y travaille", score:1},
-      {label:"Non, et ce n'est pas une priorité pour l'instant", score:0},
-    ]},
-  { id:18, axe:"exposition", magnet:false,
-    text:"Si une nouvelle réglementation technique (RE2020, rénovation obligatoire, matériaux biosourcés) s'imposait dans 12 mois, seriez-vous prêts à y répondre ?",
-    note:"Nouvelle réglementation 2025 : + 90 à 150 €/m² estimés.",
-    options:[
-      {label:"Oui — on anticipe les évolutions réglementaires", score:5},
-      {label:"On s'adapterait, avec un certain délai", score:3},
-      {label:"Ce serait difficile — sous-traitance ou formation nécessaires", score:1},
-      {label:"Non — on ne suit pas activement les évolutions réglementaires", score:0},
-    ]},
-
-  /* ── QUESTION OUVERTE 2 ── */
-  { id:"open2", type:"open",
-    text:"Quelle contrainte — réglementaire, climatique, ou sectorielle — ignorez-vous aujourd'hui en espérant qu'elle n'arrivera pas ?" },
-
-  /* ── AXE 4 : Capacité d'évolution ── */
-  { id:19, axe:"evolution", magnet:false,
-    text:"Votre Codir a-t-il simulé un scénario de crise — perte d'un client majeur, rupture fournisseur, choc réglementaire — au cours des 12 derniers mois ?",
-    options:[
-      {label:"Oui, avec un plan d'action formalisé", score:5},
-      {label:"Oui, de manière informelle ou partielle", score:3},
-      {label:"Non, mais on y pense", score:1},
-      {label:"Non, jamais", score:0},
-    ]},
-  { id:20, axe:"evolution", magnet:true,
-    text:"Si le marché du neuf continuait à chuter, qu'est-ce que vous changeriez dans votre activité — et en combien de temps ?",
-    note:"– 100 000 mises en chantier enregistrées en 2024.",
-    options:[
-      {label:"Un pivot est préparé et partiellement engagé", score:5},
-      {label:"On a des idées sans plan concret", score:3},
-      {label:"On s'adapterait, mais sans savoir comment encore", score:1},
-      {label:"On n'a pas vraiment anticipé ce scénario", score:0},
-    ]},
-  { id:21, axe:"evolution", magnet:false,
-    text:"La rénovation énergétique est-elle aujourd'hui votre cœur de métier, un complément, ou un marché encore peu exploré ?",
-    note:"5,2 millions de passoires thermiques, 100 Md€/an de marché estimé.",
-    options:[
-      {label:"Cœur de métier — on s'y est positionné clairement", score:5},
-      {label:"Un complément croissant dans notre activité", score:3},
-      {label:"On fait quelques chantiers sans stratégie dédiée", score:1},
-      {label:"Peu ou pas — ce n'est pas notre marché", score:0},
-    ]},
-  { id:22, axe:"evolution", magnet:false,
-    text:"Avez-vous identifié une évolution — technologique, réglementaire, sociétale — qui pourrait devenir un avantage concurrentiel si vous bougiez avant les autres ?",
-    options:[
-      {label:"Oui, et nous avons commencé à bouger", score:5},
-      {label:"Oui, mais pas encore d'action concrète", score:3},
-      {label:"Vaguement, sans l'avoir formalisé", score:1},
-      {label:"Non, ou je ne vois pas laquelle", score:0},
-    ]},
-  { id:23, axe:"evolution", magnet:false,
-    text:"Quand avez-vous révisé votre grille tarifaire pour la dernière fois ?",
-    note:"La marge nette des PME du bâtiment est de 2 à 4 %.",
-    options:[
-      {label:"Dans les 6 derniers mois", score:5},
-      {label:"Il y a 1 à 2 ans", score:3},
-      {label:"Il y a plus de 2 ans", score:1},
-      {label:"Je ne me souviens pas / jamais vraiment formalisé", score:0},
-    ]},
-  { id:24, axe:"evolution", magnet:false,
-    text:"Êtes-vous en mesure de répondre à un marché « adaptation climatique » — isolation, végétalisation, gestion des eaux pluviales ?",
-    note:"Les mairies financent de plus en plus l'adaptation climatique locale.",
-    options:[
-      {label:"Oui — c'est déjà dans notre offre", score:5},
-      {label:"Partiellement — avec de la sous-traitance", score:3},
-      {label:"Non, mais c'est un marché qu'on repère", score:1},
-      {label:"Non — ce n'est pas dans notre radar", score:0},
-    ]},
-
-  /* ── AXE 5 : Capital immatériel & potentiel ── */
-  { id:25, axe:"capital", magnet:false,
-    text:"Combien de savoirs critiques pour votre activité sont détenus par une seule personne — et que se passerait-il si elle partait ?",
-    options:[
-      {label:"Aucun — tout est documenté et transmissible", score:5},
-      {label:"1 à 2 savoirs critiques dans une seule tête", score:3},
-      {label:"3 à 5 savoirs non dupliqués", score:1},
-      {label:"Plus de 5, ou je préfère ne pas y penser", score:0},
-    ]},
-  { id:26, axe:"capital", magnet:true,
-    text:"Pourquoi vos meilleurs salariés restent — et si ce n'est pas le cas, pourquoi sont-ils partis ?",
-    note:"Turn-over BTP : environ 30 %/an. 71,5 % des recrutements sont difficiles.",
-    options:[
-      {label:"On le sait et on travaille activement dessus", score:5},
-      {label:"On a une idée mais ce n'est pas formalisé", score:3},
-      {label:"On suppose des raisons sans les avoir vraiment vérifiées", score:1},
-      {label:"On n'a pas cette visibilité sur nos équipes", score:0},
-    ]},
-  { id:27, axe:"capital", magnet:false,
-    text:"Votre réputation repose sur quoi exactement — et qui la porte dans votre organisation ?",
-    options:[
-      {label:"Sur un système clair, partagé et peu dépendant d'une personne", score:5},
-      {label:"Sur quelques personnes clés avec des pratiques partagées", score:3},
-      {label:"Surtout sur 1-2 personnes — le dirigeant, principalement", score:1},
-      {label:"On n'a pas vraiment analysé ça", score:0},
-    ]},
-  { id:28, axe:"capital", magnet:false,
-    text:"Votre entreprise serait-elle vendable dans 3 ans — et si vous étiez l'acheteur, qu'est-ce qui vous ferait hésiter ?",
-    note:"30 % des dirigeants du bâtiment ont plus de 55 ans.",
-    options:[
-      {label:"Oui — on travaille déjà à la transmissibilité", score:5},
-      {label:"Probablement, mais il y a des points à renforcer", score:3},
-      {label:"Difficile à dire — plusieurs dépendances préoccupantes", score:1},
-      {label:"On n'y a pas réfléchi, ou ce n'est pas d'actualité", score:0},
-    ]},
-  { id:29, axe:"capital", magnet:false,
-    text:"Avez-vous identifié et activé les savoir-faire, relations ou actifs immatériels qui vous différencient vraiment ?",
-    options:[
-      {label:"Oui, identifiés et activement exploités", score:5},
-      {label:"Identifiés mais pas pleinement exploités", score:3},
-      {label:"On sait qu'il y en a, sans les avoir formalisés", score:1},
-      {label:"Non, ou je ne vois pas lesquels", score:0},
-    ]},
-  { id:30, axe:"capital", magnet:true,
-    text:"Votre raison d'être — ce qui fait que vos meilleurs éléments restent et que certains clients vous choisissent malgré un prix plus élevé — est-elle explicite et partagée ?",
-    options:[
-      {label:"Formalisée et utilisée comme critère de décision", score:5},
-      {label:"Formalisée mais peu utilisée au quotidien", score:3},
-      {label:"Elle existe mais n'est pas vraiment partagée", score:1},
-      {label:"Non, ou je ne vois pas le lien avec la stratégie", score:0},
-    ]},
-
-  /* ── QUESTION MIROIR ── */
-  { id:"mirror", type:"mirror",
-    text:"Relisez mentalement vos réponses. Combien d'entre elles intègrent les contraintes climatiques, énergétiques et réglementaires des 10 prochaines années ?",
-    subtext:"Si la réponse est « peu » ou « aucune », votre diagnostic de robustesse est incomplet. Ce qui ne figure pas dans votre grille de lecture ne figure pas dans vos décisions." },
-
-  /* ── QUESTION OUVERTE FINALE ── */
-  { id:"open3", type:"open",
-    text:"Un mot, une réaction, quelque chose que ce diagnostic a fait remonter ?" },
-];
-
-/* ═══════════════════════ SÉLECTION SELON MODE ═══════════════════════ */
-
-function buildQS(mode) {
-  if (mode === "magnet") {
-    // 12 questions scorées (magnet:true) + 1 ouverte + miroir + ouverte finale
-    const scored = ALL_QUESTIONS.filter(q => !q.type && q.magnet);
-    // Insérer une question ouverte au milieu
-    const mid = Math.floor(scored.length / 2);
-    const withOpen = [
-      ...scored.slice(0, mid),
-      { id:"openM", type:"open", text:"En une phrase : quel est le sujet que votre Codir ne regarde pas en face ?" },
-      ...scored.slice(mid),
-      { id:"mirrorM", type:"mirror",
-        text:"Relisez vos réponses. Combien intègrent les contraintes des 10 prochaines années ?",
-        subtext:"Ce qui ne figure pas dans votre grille de lecture ne figure pas dans vos décisions." },
-    ];
-    return withOpen;
+  } catch(err) {
+    return ContentService
+      .createTextOutput(JSON.stringify({ status: "error", message: err.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
   }
-  // Mode complet : toutes les questions
-  return ALL_QUESTIONS;
 }
 
-/* ═══════════════════════ SCORING ═══════════════════════ */
+// ── EMAIL ADMIN ──────────────────────────────────────────────
 
-function getZone(t, max) {
-  const pct = t / max;
-  if (pct >= 0.80) return {zone:"Robuste",    color:C.vert,    msg:"Votre modèle présente des bases solides. L'enjeu : vérifier que votre Codir partage cette lecture — et anticiper les chocs à venir avant qu'ils ne testent cette robustesse."};
-  if (pct >= 0.55) return {zone:"Vigilant",   color:C.ocre,    msg:"Vous avez conscience de certaines vulnérabilités, mais des angles morts subsistent. La question n'est pas si un choc arrivera, mais quand. Mieux vaut le simuler que le subir."};
-  if (pct >= 0.30) return {zone:"Exposé",     color:C.brique,  msg:"Votre modèle repose sur des dépendances fortes et peu diversifiées. Un choc sur votre chaîne — client, fournisseur, énergie, compétence — aurait un impact structurel."};
-  return                  {zone:"Fragile",    color:"#8B2020", msg:"Plusieurs fondations de votre modèle sont vulnérables simultanément. La pérennité de votre entreprise mérite une attention stratégique immédiate."};
-}
+function envoyerEmailAdmin(data) {
+  const date = new Date(data.timestamp).toLocaleString("fr-FR", {
+    dateStyle: "full", timeStyle: "short", timeZone: "Europe/Paris"
+  });
+  const pct = Math.round(data.score_total / data.score_max * 100);
+  const email = data.email && data.email !== "(anonyme)" ? data.email : "Anonyme";
 
-/* ═══════════════════════ RADAR SVG ═══════════════════════ */
+  const sujet = `Nouveau diagnostic — ${data.zone} (${pct}%) — ${email}`;
 
-function Radar({ data, max }) {
-  // sz plus grand, rayon réduit, marge généreuse pour les labels
-  const sz=380, cx=sz/2, cy=sz/2, r=100, n=data.length, st=-Math.PI/2, s=(2*Math.PI)/n;
-  const labelDist = r + 38; // distance label depuis centre
-  function pt(i,v){const a=st+i*s,d=(v/max)*r;return[cx+d*Math.cos(a),cy+d*Math.sin(a)];}
-  return(
-    <svg viewBox={"0 0 "+sz+" "+sz} style={{width:"100%",maxWidth:360,display:"block",margin:"0 auto",overflow:"visible"}}>
-      {[0.25,0.5,0.75,1].map((p,ri)=><polygon key={ri} points={Array.from({length:n},(_,i)=>pt(i,max*p).join(",")).join(" ")} fill="none" stroke={C.sable} strokeWidth="1"/>)}
-      {Array.from({length:n},(_,i)=>{const[x2,y2]=pt(i,max);return<line key={i} x1={cx} y1={cy} x2={x2} y2={y2} stroke={C.sable} strokeWidth="1"/>;})}
-      <polygon points={data.map((d,i)=>pt(i,Math.max(d.score,0.3)).join(",")).join(" ")} fill={C.vert} fillOpacity="0.13" stroke={C.vert} strokeWidth="2.5" strokeLinejoin="round"/>
-      {data.map((d,i)=>{const[x,y]=pt(i,Math.max(d.score,0.3));return<circle key={i} cx={x} cy={y} r="5" fill={C.ocre} stroke={C.vert} strokeWidth="2"/>;})}
-      {data.map((d,i)=>{
-        const a=st+i*s;
-        const lx=cx+labelDist*Math.cos(a);
-        const ly=cy+labelDist*Math.sin(a);
-        // Ancrage texte selon position angulaire
-        let an="middle";
-        if(Math.cos(a)>0.2) an="start";
-        if(Math.cos(a)<-0.2) an="end";
-        // Décalage vertical pour les labels latéraux
-        const dy = Math.abs(Math.cos(a))>0.7 ? 0 : (Math.sin(a)>0 ? 4 : -4);
-        return(
-          <text key={i} x={lx} y={ly+dy} textAnchor={an} dominantBaseline="central"
-            style={{fontSize:"12px",fontFamily:serif,fill:C.grisFonce,fontWeight:600}}>
-            {d.axis}
-          </text>
-        );
-      })}
-    </svg>
-  );
-}
-
-/* ═══════════════════════ FOOTER ═══════════════════════ */
-
-function Foot() {
-  return(
-    <div style={{borderTop:"3px solid "+C.ocre,background:C.vert,padding:"28px 20px",textAlign:"center"}}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:12,marginBottom:12}}>
-        <div style={{width:26,height:26,opacity:0.5}}>
-          <Cerne size={200} rings={10} sw={1.8} op={0.8} cx={100} cy={100} maxR={85}/>
-        </div>
-        <span style={{fontFamily:serif,fontSize:"13px",fontWeight:700,color:C.sable,letterSpacing:"0.5px"}}>Le test de robustesse</span>
-        <span style={{color:C.gris,fontSize:"13px"}}>·</span>
-        <span style={{fontSize:"13px",color:C.gris}}>Open Lande</span>
+  const corps = `
+    <div style="font-family: Georgia, serif; max-width: 560px; margin: 0 auto; color: #3D3B37;">
+      
+      <div style="background: #0E4238; padding: 24px 28px; margin-bottom: 24px;">
+        <p style="color: #F9B233; font-size: 11px; letter-spacing: 3px; text-transform: uppercase; margin: 0 0 8px;">
+          Open Lande — Le test de robustesse
+        </p>
+        <h1 style="color: #FFFFFF; font-size: 22px; margin: 0; font-weight: 700;">
+          Nouveau diagnostic reçu
+        </h1>
       </div>
-      <p style={{fontFamily:serif,fontSize:"12px",fontStyle:"italic",color:C.gris,lineHeight:1.5}}>{BASELINE}</p>
-    </div>
-  );
-}
 
-/* ═══════════════════════ APP ═══════════════════════ */
+      <div style="padding: 0 4px;">
+        <p style="margin: 0 0 20px;">Bonjour ${NOM_ADMIN},</p>
+        <p style="margin: 0 0 24px;">Un nouveau diagnostic vient d'être complété.</p>
 
-function App() {
-  const [mode, setMode] = useState(null);
-  const [stp,setStp]=useState(-1);
-  const [ans,setAns]=useState({});
-  const [sel,setSel]=useState({});
-  const [opn,setOpn]=useState({});
-  const [anim,setAnim]=useState(false);
-  const [done,setDone]=useState(false);
-  const [emailStep,setEmailStep]=useState(false);
-  const [email,setEmail]=useState("");
-  const [sending,setSending]=useState(false);
-  const [sent,setSent]=useState(false);
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px;">
+          <tr>
+            <td style="padding: 10px 12px; background: #F6F0E7; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; width: 140px;">Date</td>
+            <td style="padding: 10px 12px; background: #F6F0E7; font-size: 14px;">${date}</td>
+          </tr>
+          <tr>
+            <td style="padding: 10px 12px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px;">Email</td>
+            <td style="padding: 10px 12px; font-size: 14px;">${email}</td>
+          </tr>
+          <tr>
+            <td style="padding: 10px 12px; background: #F6F0E7; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px;">Format</td>
+            <td style="padding: 10px 12px; background: #F6F0E7; font-size: 14px;">${data.mode === "magnet" ? "Court (12 questions)" : "Complet (30 questions)"}</td>
+          </tr>
+          <tr>
+            <td style="padding: 10px 12px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px;">Profil</td>
+            <td style="padding: 10px 12px; font-size: 14px; font-weight: 700;">${data.zone} — ${data.score_total}/${data.score_max} (${pct}%)</td>
+          </tr>
+        </table>
 
-  const QS = useMemo(() => mode ? buildQS(mode) : [], [mode]);
-  const q=stp>=0&&QS.length?QS[stp]:null;
-  const isS=q&&!q.type, isO=q&&q.type==="open", isM=q&&q.type==="mirror";
-  const sI=q?QS.filter(x=>!x.type).indexOf(q)+1:0;
-  const tS=QS.filter(x=>!x.type).length;
-  const aI=isS?AXES.findIndex(a=>a.key===q.axe):-1;
+        <h3 style="font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: #8A8579; margin: 0 0 12px;">Scores par axe</h3>
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 13px;">
+          ${axeRow("Concentration", data.axe_concentration)}
+          ${axeRow("Visibilité", data.axe_visibilite)}
+          ${axeRow("Exposition", data.axe_exposition)}
+          ${axeRow("Évolution", data.axe_evolution)}
+          ${axeRow("Capital", data.axe_capital)}
+        </table>
 
-  function nxt(){setAnim(true);setTimeout(()=>{
-    if(stp+1>=QS.length){setEmailStep(true);}
-    else{setStp(stp+1);}
-    setAnim(false);
-  },280);}
-  function bck(){if(stp>0){setAnim(true);setTimeout(()=>{setStp(stp-1);setAnim(false);},280);}}
+        ${data.open1 ? `
+        <div style="border-left: 3px solid #F9B233; padding: 12px 16px; background: #F6F0E7; margin-bottom: 12px;">
+          <p style="font-size: 11px; color: #8A8579; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 6px;">Sujet stratégique non posé</p>
+          <p style="font-style: italic; margin: 0; font-size: 14px;">« ${data.open1} »</p>
+        </div>` : ""}
 
-  function sc(){
-    const s={};
-    AXES.forEach(a=>{
-      const qs=QS.filter(x=>x.axe===a.key);
-      s[a.key]=qs.reduce((c,x)=>c+(ans[x.id]||0),0);
-    });
-    return s;
-  }
+        ${data.open2 ? `
+        <div style="border-left: 3px solid #F9B233; padding: 12px 16px; background: #F6F0E7; margin-bottom: 12px;">
+          <p style="font-size: 11px; color: #8A8579; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 6px;">Contrainte ignorée</p>
+          <p style="font-style: italic; margin: 0; font-size: 14px;">« ${data.open2} »</p>
+        </div>` : ""}
 
-  async function submitAndShow() {
-    setSending(true);
-    const s=sc();
-    const maxScore=QS.filter(x=>x.axe).reduce((acc,q)=>acc+(q.options?Math.max(...q.options.map(o=>o.score)):0),0);
-    const total=Object.values(s).reduce((a,b)=>a+b,0);
-    const zone=getZone(total,maxScore);
-    const payload={
-      timestamp: new Date().toISOString(),
-      mode,
-      email: email||"(anonyme)",
-      zone: zone.zone,
-      score_total: total,
-      score_max: maxScore,
-      ...Object.fromEntries(AXES.map(a=>["axe_"+a.key, s[a.key]])),
-      open1: opn["open1"]||opn["openM"]||"",
-      open2: opn["open2"]||"",
-      open3: opn["open3"]||"",
-    };
-    await sendToSheets(payload);
-    setSending(false);
-    setSent(true);
-    setEmailStep(false);
-    setDone(true);
-  }
+        ${data.open3 ? `
+        <div style="border-left: 3px solid #F9B233; padding: 12px 16px; background: #F6F0E7; margin-bottom: 24px;">
+          <p style="font-size: 11px; color: #8A8579; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 6px;">Réaction au diagnostic</p>
+          <p style="font-style: italic; margin: 0; font-size: 14px;">« ${data.open3} »</p>
+        </div>` : ""}
 
-  /* ─── CHOIX DU MODE ─── */
-  if (!mode) return (
-    <div style={{minHeight:"100vh",background:C.vert,display:"flex",flexDirection:"column"}}>
-      <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:"60px 24px 40px",position:"relative",overflow:"hidden"}}>
-        <div style={{position:"absolute",right:"-12%",top:"50%",transform:"translateY(-50%)",width:"min(65vw, 500px)",height:"min(65vw, 500px)",opacity:0.1,pointerEvents:"none"}}>
-          <Cerne size={400} rings={22} sw={1.4} op={1} cx={200} cy={200} maxR={180} clip={true}/>
-        </div>
-        <div style={{maxWidth:560,textAlign:"center",position:"relative",zIndex:2}}>
-          <div style={{width:64,height:64,margin:"0 auto 28px",opacity:0.8,animation:"fadeUp 0.6s 0.1s both"}}>
-            <Cerne size={200} rings={14} sw={1.5} op={0.65} cx={100} cy={100} maxR={88}/>
-          </div>
-          <div style={{fontSize:"11px",letterSpacing:"4px",textTransform:"uppercase",color:C.ocre,marginBottom:28,fontWeight:600,animation:"fadeUp 0.6s 0.2s both"}}>
-            Open Lande — Le test de robustesse
-          </div>
-          <h1 style={{fontFamily:serif,fontSize:"clamp(26px, 5vw, 40px)",color:C.blanc,lineHeight:1.15,fontWeight:700,marginBottom:20,animation:"fadeUp 0.7s 0.3s both"}}>
-            Le diagnostic<br/>de <span style={{color:C.ocre,fontStyle:"italic"}}>robustesse</span>
-          </h1>
-          <p style={{fontFamily:serif,fontSize:"clamp(14px, 2.2vw, 17px)",color:C.sable,lineHeight:1.6,marginBottom:40,fontStyle:"italic",animation:"fadeUp 0.7s 0.45s both"}}>
-            Choisissez votre format
-          </p>
-
-          {/* Deux cartes */}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:40,animation:"fadeUp 0.7s 0.55s both"}}>
-            {/* Magnet */}
-            <button onClick={()=>{setMode("magnet");setStp(0);}}
-              style={{background:"rgba(255,255,255,0.07)",border:"2px solid rgba(249,178,51,0.4)",padding:"24px 20px",cursor:"pointer",textAlign:"left",transition:"all 0.25s"}}
-              onMouseEnter={e=>{e.currentTarget.style.background="rgba(249,178,51,0.12)";e.currentTarget.style.borderColor=C.ocre;}}
-              onMouseLeave={e=>{e.currentTarget.style.background="rgba(255,255,255,0.07)";e.currentTarget.style.borderColor="rgba(249,178,51,0.4)";}}>
-              <div style={{fontSize:"11px",letterSpacing:"3px",textTransform:"uppercase",color:C.ocre,fontWeight:600,marginBottom:10}}>Format court</div>
-              <div style={{fontFamily:serif,fontSize:"clamp(18px, 3vw, 24px)",color:C.blanc,fontWeight:700,marginBottom:8}}>12 questions</div>
-              <div style={{fontSize:"13px",color:C.gris,lineHeight:1.5}}>5 minutes · Premier aperçu de vos vulnérabilités</div>
-            </button>
-            {/* Complet */}
-            <button onClick={()=>{setMode("complet");setStp(0);}}
-              style={{background:"rgba(255,255,255,0.07)",border:"2px solid rgba(255,255,255,0.15)",padding:"24px 20px",cursor:"pointer",textAlign:"left",transition:"all 0.25s"}}
-              onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.12)";e.currentTarget.style.borderColor="rgba(255,255,255,0.4)";}  }
-              onMouseLeave={e=>{e.currentTarget.style.background="rgba(255,255,255,0.07)";e.currentTarget.style.borderColor="rgba(255,255,255,0.15)";}}>
-              <div style={{fontSize:"11px",letterSpacing:"3px",textTransform:"uppercase",color:C.sable,fontWeight:600,marginBottom:10}}>Format complet</div>
-              <div style={{fontFamily:serif,fontSize:"clamp(18px, 3vw, 24px)",color:C.blanc,fontWeight:700,marginBottom:8}}>30 questions</div>
-              <div style={{fontSize:"13px",color:C.gris,lineHeight:1.5}}>15 minutes · Diagnostic approfondi sur 5 axes</div>
-            </button>
-          </div>
-
-          <p style={{fontFamily:serif,fontSize:"12px",fontStyle:"italic",color:C.gris,lineHeight:1.5,animation:"fadeUp 0.7s 0.7s both"}}>{BASELINE}</p>
-        </div>
+        <p style="font-size: 13px; color: #8A8579; border-top: 1px solid #E8E0D0; padding-top: 16px; margin-top: 8px;">
+          Open Lande · <a href="${URL_DIAG}" style="color: #0E4238;">${URL_DIAG}</a>
+        </p>
       </div>
     </div>
-  );
+  `;
 
-  /* ─── ÉTAPE EMAIL ─── */
-  if(emailStep){
-    return(
-      <div style={{minHeight:"100vh",background:C.vert,display:"flex",alignItems:"center",justifyContent:"center",padding:"40px 24px"}}>
-        <div style={{maxWidth:480,width:"100%",textAlign:"center"}}>
-          <div style={{width:48,height:48,margin:"0 auto 24px",opacity:0.7}}>
-            <Cerne size={200} rings={14} sw={1.5} op={0.65} cx={100} cy={100} maxR={88}/>
-          </div>
-          <h2 style={{fontFamily:serif,fontSize:"clamp(22px, 4vw, 30px)",color:C.blanc,fontWeight:700,marginBottom:16,lineHeight:1.3}}>
-            Votre diagnostic est prêt
-          </h2>
-          <p style={{fontSize:"15px",color:C.sable,lineHeight:1.6,marginBottom:32,fontStyle:"italic"}}>
-            Laissez votre email pour recevoir vos résultats — ou continuez directement.
-          </p>
-          <input
-            type="email"
-            value={email}
-            onChange={e=>setEmail(e.target.value)}
-            placeholder="votre@email.fr (facultatif)"
-            style={{width:"100%",padding:"14px 18px",fontSize:"15px",border:"2px solid rgba(255,255,255,0.2)",background:"rgba(255,255,255,0.08)",color:C.blanc,outline:"none",marginBottom:12,fontFamily:"inherit"}}
-            onFocus={e=>e.target.style.borderColor=C.ocre}
-            onBlur={e=>e.target.style.borderColor="rgba(255,255,255,0.2)"}
-          />
-          <button onClick={submitAndShow} disabled={sending}
-            style={{width:"100%",background:C.ocre,color:C.vert,border:"none",padding:"16px",fontSize:"15px",fontWeight:700,cursor:"pointer",marginBottom:12,transition:"background 0.2s"}}
-            onMouseEnter={e=>!sending&&(e.target.style.background="#e0b85a")}
-            onMouseLeave={e=>e.target.style.background=C.ocre}>
-            {sending ? "Envoi en cours…" : "Voir mes résultats →"}
-          </button>
-          <button onClick={()=>{setEmailStep(false);setDone(true);}}
-            style={{background:"none",border:"none",color:C.gris,fontSize:"13px",cursor:"pointer",padding:"8px"}}>
-            Continuer sans email
-          </button>
-          <p style={{fontFamily:serif,fontSize:"11px",fontStyle:"italic",color:"rgba(138,133,121,0.7)",marginTop:24,lineHeight:1.5}}>
-            Vos réponses sont confidentielles. Aucune donnée n'est partagée avec des tiers.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  /* ─── RESULTS + RAPPORT ─── */
-  if(done){
-    const s=sc();
-    const maxScore=QS.filter(x=>x.axe).reduce((acc,q)=>acc+(q.options?Math.max(...q.options.map(o=>o.score)):0),0);
-    const total=Object.values(s).reduce((a,b)=>a+b,0);
-    const zone=getZone(total,maxScore);
-    const rd=AXES.map(a=>({axis:a.short,score:s[a.key]}));
-    const today=new Date().toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"});
-
-    // Calcul axe max par axe
-    function axeMax(key){return QS.filter(x=>x.axe===key).reduce((acc,q)=>acc+(q.options?Math.max(...q.options.map(o=>o.score)):0),0);}
-
-    // Axes triés du plus faible au plus fort (points de vigilance en premier)
-    const axesSorted=[...AXES].sort((a,b)=>{
-      const pa=axeMax(a.key)>0?s[a.key]/axeMax(a.key):0;
-      const pb=axeMax(b.key)>0?s[b.key]/axeMax(b.key):0;
-      return pa-pb;
-    });
-
-    const hasOpen = opn["open1"]||opn["openM"]||opn["open2"]||opn["open3"];
-
-    return(
-      <div style={{background:C.creme,minHeight:"100vh"}}>
-
-        {/* ══ BOUTON RAPPORT (no-print) ══ */}
-        <div className="no-print" style={{background:C.vert,padding:"12px 20px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <div style={{width:20,height:20,opacity:0.5}}><Cerne size={200} rings={10} sw={1.8} op={0.8} cx={100} cy={100} maxR={85}/></div>
-            <span style={{fontFamily:serif,fontSize:"12px",color:C.sable,fontWeight:600}}>Le test de robustesse · Open Lande</span>
-          </div>
-          <button onClick={()=>window.print()}
-            style={{background:C.ocre,color:C.vert,border:"none",padding:"8px 20px",fontSize:"13px",fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:8,transition:"background 0.2s"}}
-            onMouseEnter={e=>e.target.style.background="#e0b85a"} onMouseLeave={e=>e.target.style.background=C.ocre}>
-            ↓ Télécharger le rapport
-          </button>
-        </div>
-
-        <div style={{padding:"40px 20px"}}>
-          <div style={{maxWidth:680,margin:"0 auto"}}>
-
-            {/* ══ EN-TÊTE RAPPORT (visible print + écran) ══ */}
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:36,paddingBottom:24,borderBottom:"3px solid "+C.ocre}}>
-              <div>
-                <div style={{fontSize:"11px",letterSpacing:"4px",textTransform:"uppercase",color:C.ocre,fontWeight:600,marginBottom:8}}>
-                  Rapport de diagnostic
-                </div>
-                <h1 style={{fontFamily:serif,fontSize:"clamp(22px, 4vw, 32px)",color:C.vert,fontWeight:700,lineHeight:1.2,marginBottom:8}}>
-                  Robustesse organisationnelle
-                </h1>
-                <p style={{fontSize:"13px",color:C.gris}}>{today} · Format {mode==="magnet"?"court (12 questions)":"complet (30 questions)"}</p>
-              </div>
-              <div style={{width:56,height:56,opacity:0.6,flexShrink:0}}>
-                <Cerne size={200} rings={14} sw={1.5} op={0.6} cx={100} cy={100} maxR={88}/>
-              </div>
-            </div>
-
-            {/* ══ SCORE GLOBAL ══ */}
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:32}}>
-              <div style={{background:C.blanc,padding:"24px",boxShadow:"0 2px 12px rgba(0,0,0,0.05)"}}>
-                <div style={{fontSize:"11px",letterSpacing:"3px",textTransform:"uppercase",color:C.gris,fontWeight:600,marginBottom:8}}>Score global</div>
-                <div style={{fontFamily:serif,fontSize:"42px",fontWeight:700,color:C.vert,lineHeight:1}}>{total}</div>
-                <div style={{fontSize:"14px",color:C.gris,marginTop:4}}>sur {maxScore} points</div>
-              </div>
-              <div style={{background:zone.color,padding:"24px"}}>
-                <div style={{fontSize:"11px",letterSpacing:"3px",textTransform:"uppercase",color:"rgba(255,255,255,0.7)",fontWeight:600,marginBottom:8}}>Profil</div>
-                <div style={{fontFamily:serif,fontSize:"28px",fontWeight:700,color:C.blanc,lineHeight:1.1}}>{zone.zone}</div>
-                <div style={{fontSize:"13px",color:"rgba(255,255,255,0.8)",marginTop:6,lineHeight:1.4}}>{Math.round(total/maxScore*100)} % du score maximal</div>
-              </div>
-            </div>
-
-            {/* ══ RADAR ══ */}
-            <div style={{background:C.blanc,padding:"32px 16px",marginBottom:28,boxShadow:"0 2px 16px rgba(0,0,0,0.05)"}}>
-              <div style={{textAlign:"center",marginBottom:4}}>
-                <span style={{fontSize:"11px",letterSpacing:"3px",textTransform:"uppercase",color:C.gris,fontWeight:600}}>Profil sur 5 axes</span>
-              </div>
-              <Radar data={rd} max={AXES.reduce((m,a)=>Math.max(m,axeMax(a.key)),1)}/>
-            </div>
-
-            {/* ══ LECTURE GLOBALE ══ */}
-            <div style={{background:C.blanc,padding:"24px 28px",marginBottom:28,borderLeft:"4px solid "+zone.color,boxShadow:"0 2px 12px rgba(0,0,0,0.04)"}}>
-              <div style={{fontSize:"11px",letterSpacing:"3px",textTransform:"uppercase",color:C.gris,fontWeight:600,marginBottom:10}}>Lecture globale</div>
-              <p style={{fontSize:"15px",lineHeight:1.7,color:C.grisFonce}}>{zone.msg}</p>
-            </div>
-
-            {/* ══ DÉTAIL PAR AXE — RAPPORT ENRICHI ══ */}
-            <div style={{marginBottom:8}}>
-              <div style={{fontSize:"11px",letterSpacing:"3px",textTransform:"uppercase",color:C.gris,fontWeight:600,marginBottom:20,paddingBottom:12,borderBottom:"1px solid "+C.sable}}>
-                Analyse détaillée par dimension
-              </div>
-              {axesSorted.map((a,idx)=>{
-                const v=s[a.key];
-                const aM=axeMax(a.key);
-                const pct=aM>0?(v/aM):0;
-                const lvl=getAxeLevel(pct);
-                const lvlColor=lvl==="fort"?C.vert:lvl==="moyen"?C.ocre:C.brique;
-                const lvlLabel=lvl==="fort"?"Solide":lvl==="moyen"?"À surveiller":"Prioritaire";
-                const data=AXE_DATA[a.key];
-                const niv=data.niveaux[lvl];
-                const isPriority = idx < 2;
-                return(
-                  <div key={a.key} style={{marginBottom:28}} className="axe-block">
-                    {/* En-tête axe */}
-                    <div style={{display:"flex",alignItems:"stretch",marginBottom:0}}>
-                      <div style={{width:4,background:lvlColor,flexShrink:0,borderRadius:"2px 0 0 0"}}/>
-                      <div style={{flex:1,background:C.blanc,padding:"20px 24px 16px",boxShadow:"0 1px 8px rgba(0,0,0,0.05)",borderRadius:"0 4px 0 0"}}>
-                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
-                          <div>
-                            <div style={{fontSize:"11px",letterSpacing:"3px",textTransform:"uppercase",color:C.gris,fontWeight:600,marginBottom:4}}>
-                              Axe {idx+1}
-                            </div>
-                            <div style={{fontFamily:serif,fontSize:"17px",fontWeight:700,color:C.grisFonce}}>{a.label}</div>
-                          </div>
-                          <div style={{textAlign:"right",flexShrink:0,marginLeft:16}}>
-                            <div style={{display:"inline-block",padding:"3px 10px",background:lvlColor,color:C.blanc,fontSize:"10px",fontWeight:700,letterSpacing:"1.5px",marginBottom:6,display:"block",textAlign:"center"}}>{lvlLabel}</div>
-                            <div style={{fontFamily:serif,fontSize:"22px",fontWeight:700,color:lvlColor,lineHeight:1}}>{v}<span style={{fontSize:"13px",fontWeight:400,color:C.gris}}>/{aM}</span></div>
-                          </div>
-                        </div>
-                        {/* Barre de score */}
-                        <div style={{width:"100%",height:5,background:C.sable,borderRadius:3,marginBottom:14}}>
-                          <div style={{width:(pct*100)+"%",height:"100%",background:lvlColor,borderRadius:3}}/>
-                        </div>
-                        {/* Titre niveau */}
-                        <div style={{fontFamily:serif,fontSize:"14px",fontWeight:700,color:lvlColor,marginBottom:8,fontStyle:"italic"}}>
-                          {niv.titre}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Corps : description + lecture */}
-                    <div style={{background:C.blanc,padding:"0 24px 20px",boxShadow:"0 1px 8px rgba(0,0,0,0.05)",borderTop:"1px solid "+C.sable}}>
-                      {/* Ce que mesure cet axe */}
-                      <div style={{padding:"16px 0 12px",borderBottom:"1px solid "+C.sable,marginBottom:16}}>
-                        <div style={{fontSize:"10px",letterSpacing:"2px",textTransform:"uppercase",color:C.gris,fontWeight:600,marginBottom:6}}>Ce que mesure cet axe</div>
-                        <p style={{fontSize:"13px",color:C.grisFonce,lineHeight:1.7,fontStyle:"italic"}}>{data.description}</p>
-                      </div>
-
-                      {/* Lecture personnalisée */}
-                      <div style={{marginBottom:16}}>
-                        <div style={{fontSize:"10px",letterSpacing:"2px",textTransform:"uppercase",color:C.gris,fontWeight:600,marginBottom:8}}>Votre situation</div>
-                        <p style={{fontSize:"14px",color:C.grisFonce,lineHeight:1.7}}>{niv.texte}</p>
-                      </div>
-
-                      {/* Signaux d'alarme (si niveau moyen ou faible) */}
-                      {niv.signaux && niv.signaux.length > 0 && (
-                        <div style={{background:"rgba(237,117,101,0.06)",padding:"14px 16px",marginBottom:16,borderLeft:"3px solid "+C.brique}}>
-                          <div style={{fontSize:"10px",letterSpacing:"2px",textTransform:"uppercase",color:C.brique,fontWeight:600,marginBottom:8}}>Signaux d'alarme à surveiller</div>
-                          {niv.signaux.map((s,i)=>(
-                            <div key={i} style={{display:"flex",gap:8,marginBottom:6,alignItems:"flex-start"}}>
-                              <span style={{color:C.brique,fontWeight:700,flexShrink:0,marginTop:1}}>—</span>
-                              <p style={{fontSize:"13px",color:C.grisFonce,lineHeight:1.5,margin:0}}>{s}</p>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Exemple terrain */}
-                      <div style={{background:C.creme,padding:"14px 16px",marginBottom:16,borderLeft:"3px solid "+C.ocre}}>
-                        <div style={{fontSize:"10px",letterSpacing:"2px",textTransform:"uppercase",color:C.ocre,fontWeight:600,marginBottom:6}}>Exemple terrain — secteur bâtiment</div>
-                        <p style={{fontSize:"13px",color:C.grisFonce,lineHeight:1.6,fontStyle:"italic"}}>{niv.exemples}</p>
-                      </div>
-
-                      {/* Pistes */}
-                      <div>
-                        <div style={{fontSize:"10px",letterSpacing:"2px",textTransform:"uppercase",color:C.vert,fontWeight:600,marginBottom:8}}>Pistes pour la suite</div>
-                        {niv.pistes.map((p,i)=>(
-                          <div key={i} style={{display:"flex",gap:10,marginBottom:8,alignItems:"flex-start"}}>
-                            <span style={{width:20,height:20,borderRadius:"50%",background:C.vert,color:C.blanc,fontSize:"10px",fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:1}}>{i+1}</span>
-                            <p style={{fontSize:"13px",color:C.grisFonce,lineHeight:1.5,margin:0}}>{p}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* ══ PUNCHLINE CODIR ══ */}
-            <div style={{background:C.vert,padding:"32px 28px",marginBottom:28,position:"relative",overflow:"hidden"}}>
-              <div style={{position:"absolute",right:-20,top:"50%",transform:"translateY(-50%)",width:180,height:180,opacity:0.05}}>
-                <Cerne size={200} rings={12} sw={2} op={1} cx={100} cy={100} maxR={90}/>
-              </div>
-              <p style={{fontFamily:serif,fontSize:"18px",fontStyle:"italic",color:C.sable,lineHeight:1.6,position:"relative",zIndex:1,marginBottom:8}}>
-                Ce diagnostic mesure votre lucidité individuelle.
-              </p>
-              <p style={{fontFamily:serif,fontSize:"20px",fontWeight:700,color:C.ocre,lineHeight:1.4,position:"relative",zIndex:1}}>
-                Le test de robustesse mesure celle de votre Codir.<br/>
-                <span style={{color:C.blanc,fontSize:"17px",fontWeight:400,fontStyle:"italic"}}>Et c'est rarement la même.</span>
-              </p>
-            </div>
-
-            {/* ══ RÉPONSES OUVERTES ══ */}
-            {hasOpen && (
-              <div style={{marginBottom:28}}>
-                <div style={{fontSize:"11px",letterSpacing:"3px",textTransform:"uppercase",color:C.gris,fontWeight:600,marginBottom:16,paddingBottom:12,borderBottom:"1px solid "+C.sable}}>
-                  Ce que vous avez noté en cours de route
-                </div>
-                {[
-                  {id:"open1",label:"Sujet stratégique non posé"},
-                  {id:"openM",label:"Sujet stratégique non posé"},
-                  {id:"open2",label:"Contrainte ignorée"},
-                  {id:"open3",label:"Réaction au diagnostic"}
-                ].map(o=>opn[o.id]?(
-                  <div key={o.id} style={{background:C.blanc,padding:"18px 22px",marginBottom:10,borderLeft:"3px solid "+C.ocre,boxShadow:"0 1px 6px rgba(0,0,0,0.04)"}}>
-                    <div style={{fontSize:"10px",color:C.gris,fontWeight:600,marginBottom:8,textTransform:"uppercase",letterSpacing:"1.5px"}}>{o.label}</div>
-                    <p style={{fontFamily:serif,fontSize:"15px",color:C.grisFonce,lineHeight:1.7,fontStyle:"italic"}}>« {opn[o.id]} »</p>
-                  </div>
-                ):null)}
-                <p style={{fontSize:"13px",color:C.gris,fontStyle:"italic",marginTop:8,lineHeight:1.6}}>
-                  Ces notes sont votre matière première. Gardez-les — elles seront utiles lors du test de robustesse avec votre Codir.
-                </p>
-              </div>
-            )}
-
-            {/* ══ SUITE RECOMMANDÉE ══ */}
-            <div style={{background:C.sable,padding:"28px 32px",marginBottom:28,borderTop:"4px solid "+C.ocre}}>
-              <div style={{fontSize:"11px",letterSpacing:"3px",textTransform:"uppercase",color:C.gris,fontWeight:600,marginBottom:16}}>Quelle est la prochaine étape ?</div>
-              <p style={{fontSize:"15px",color:C.grisFonce,lineHeight:1.8,marginBottom:20}}>
-                Ce diagnostic individuel est une première lecture — celle de votre lucidité personnelle sur votre entreprise. Elle est précieuse. Elle est aussi incomplète : d'autres membres de votre Codir ont probablement une lecture différente des mêmes réalités.
-              </p>
-              <p style={{fontSize:"15px",color:C.grisFonce,lineHeight:1.8,marginBottom:24}}>
-                <strong>Le test de robustesse</strong> est une simulation stratégique de 3 heures avec l'ensemble de votre Codir. En partant de votre chaîne de valeur réelle, en la soumettant à un scénario de crise, vous découvrez collectivement où sont les vraies fractures — et vous repartez avec des décisions concrètes à 30 jours.
-              </p>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(3, 1fr)",gap:12,marginBottom:24}}>
-                {[
-                  {n:"01",t:"Cartographier",d:"Votre chaîne de valeur complète — de vos fournisseurs à vos clients."},
-                  {n:"02",t:"Tester",d:"Un scénario de choc réel : perte de client, rupture, crise réglementaire."},
-                  {n:"03",t:"Décider",d:"3 déplacements stratégiques concrets. Un premier pas à 30 jours."},
-                ].map(item=>(
-                  <div key={item.n} style={{background:C.blanc,padding:"16px",borderTop:"3px solid "+C.vert}}>
-                    <div style={{fontFamily:serif,fontSize:"24px",fontWeight:700,color:C.vert,opacity:0.3,lineHeight:1,marginBottom:6}}>{item.n}</div>
-                    <div style={{fontSize:"13px",fontWeight:700,color:C.grisFonce,marginBottom:6}}>{item.t}</div>
-                    <p style={{fontSize:"12px",color:C.gris,lineHeight:1.5}}>{item.d}</p>
-                  </div>
-                ))}
-              </div>
-              <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
-                <button className="no-print"
-                  style={{background:C.vert,color:C.blanc,border:"none",padding:"14px 28px",fontSize:"14px",fontWeight:700,cursor:"pointer",transition:"background 0.2s"}}
-                  onMouseEnter={e=>e.target.style.background=C.vertClair}
-                  onMouseLeave={e=>e.target.style.background=C.vert}>
-                  Réserver un échange de cadrage →
-                </button>
-                {mode==="magnet"&&(
-                  <button className="no-print"
-                    onClick={()=>{setMode("complet");setStp(0);setAns({});setSel({});setOpn({});setDone(false);setSent(false);setEmail("");}}
-                    style={{background:"none",border:"2px solid "+C.vert,color:C.vert,padding:"12px 24px",fontSize:"14px",fontWeight:600,cursor:"pointer",transition:"all 0.2s"}}
-                    onMouseEnter={e=>{e.currentTarget.style.background=C.vert;e.currentTarget.style.color=C.blanc;}}
-                    onMouseLeave={e=>{e.currentTarget.style.background="none";e.currentTarget.style.color=C.vert;}}>
-                    Faire le diagnostic complet (30 questions) →
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* ══ FOOTER RAPPORT ══ */}
-            <div style={{textAlign:"center",paddingTop:16,borderTop:"1px solid "+C.sable}}>
-              <p style={{fontFamily:serif,fontSize:"12px",fontStyle:"italic",color:C.gris,lineHeight:1.5}}>{BASELINE}</p>
-              <p style={{fontSize:"11px",color:C.gris,marginTop:4}}>Open Lande · openlande.co · {today}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  /* ─── QUESTIONS ─── */
-  return(
-    <div style={{minHeight:"100vh",background:C.creme,display:"flex",flexDirection:"column"}}>
-      {/* Top bar */}
-      <div style={{padding:"16px 20px 0"}}>
-        <div style={{maxWidth:640,margin:"0 auto",display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <div style={{width:20,height:20,opacity:0.45}}>
-              <Cerne size={200} rings={10} sw={1.8} op={0.8} cx={100} cy={100} maxR={88}/>
-            </div>
-            <div style={{fontSize:"11px",letterSpacing:"3px",textTransform:"uppercase",color:C.gris,fontWeight:600}}>
-              {isS?"Question "+sI+" / "+tS:isM?"Question miroir":"Question ouverte"}
-            </div>
-          </div>
-          <div style={{display:"flex",alignItems:"center",gap:12}}>
-            {aI>=0&&<div style={{fontSize:"12px",color:C.vert,fontWeight:600}}>{AXES[aI].short}</div>}
-            <div style={{fontSize:"11px",color:C.gris,background:C.sable,padding:"3px 8px",borderRadius:2}}>
-              {mode === "magnet" ? "Court" : "Complet"}
-            </div>
-          </div>
-        </div>
-        <div style={{maxWidth:640,margin:"0 auto"}}>
-          <div style={{width:"100%",height:3,background:C.sable,borderRadius:2}}>
-            <div style={{width:((stp+1)/QS.length*100)+"%",height:"100%",background:C.ocre,borderRadius:2,transition:"width 0.5s cubic-bezier(0.4,0,0.2,1)"}}/>
-          </div>
-        </div>
-      </div>
-
-      {/* Content */}
-      <div style={{
-        flex:1,display:"flex",flexDirection:"column",justifyContent:"center",
-        padding:"32px 20px",maxWidth:640,margin:"0 auto",width:"100%",
-        opacity:anim?0:1,transform:anim?"translateY(12px)":"translateY(0)",
-        transition:"opacity 0.28s, transform 0.28s",
-      }}>
-        {aI>=0&&<div style={{display:"flex",gap:4,marginBottom:20}}>
-          {AXES.map((a,i)=><div key={a.key} style={{flex:1,height:4,background:i===aI?C.vert:C.sable,borderRadius:2,transition:"background 0.3s"}}/>)}
-        </div>}
-        {isS&&q.axe&&<div style={{fontSize:"12px",fontWeight:600,color:C.ocre,letterSpacing:"2px",textTransform:"uppercase",marginBottom:12}}>{AXES.find(a=>a.key===q.axe)?.label}</div>}
-        {isM&&<div style={{width:48,height:48,borderRadius:"50%",background:C.vert,display:"flex",alignItems:"center",justifyContent:"center",marginBottom:20,color:C.ocre,fontSize:"22px",fontWeight:700}}>◈</div>}
-
-        <h2 style={{fontFamily:serif,fontSize:"clamp(18px, 3vw, 24px)",color:C.vert,fontWeight:700,lineHeight:1.4,marginBottom:q.note?12:(isM?16:32)}}>{q.text}</h2>
-
-        {q.note&&<p style={{fontSize:"13px",color:C.gris,fontStyle:"italic",marginBottom:28,lineHeight:1.5,borderLeft:"3px solid "+C.ocre,paddingLeft:12}}>{q.note}</p>}
-        {isM&&q.subtext&&<p style={{fontSize:"15px",color:C.gris,lineHeight:1.6,fontStyle:"italic",marginBottom:40,maxWidth:520}}>{q.subtext}</p>}
-
-        {isS&&<div style={{display:"flex",flexDirection:"column",gap:10}}>
-          {q.options.map((o,i)=>{const it=sel[q.id]===i;return(
-            <button key={i} onClick={()=>{setAns({...ans,[q.id]:o.score});setSel({...sel,[q.id]:i});setTimeout(nxt,400);}}
-              style={{width:"100%",padding:"16px 20px",textAlign:"left",border:"2px solid "+(it?C.vert:C.sable),background:it?C.vert:C.blanc,color:it?C.blanc:C.grisFonce,cursor:"pointer",transition:"all 0.2s",fontSize:"15px",lineHeight:1.4,display:"flex",alignItems:"center",gap:14}}>
-              <span style={{width:28,height:28,borderRadius:"50%",flexShrink:0,border:"2px solid "+(it?C.ocre:C.sable),background:it?C.ocre:"transparent",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"12px",fontWeight:700,color:it?C.vert:C.gris,transition:"all 0.2s"}}>
-                {it?"✓":String.fromCharCode(65+i)}
-              </span>
-              <span>{o.label}</span>
-            </button>
-          );})}
-        </div>}
-
-        {isO&&<div>
-          <textarea value={opn[q.id]||""} onChange={e=>setOpn({...opn,[q.id]:e.target.value})}
-            placeholder="Votre réponse (facultatif)..."
-            onFocus={e=>e.target.style.borderColor=C.vert} onBlur={e=>e.target.style.borderColor=C.sable}
-            style={{width:"100%",minHeight:100,padding:16,border:"2px solid "+C.sable,background:C.blanc,fontSize:"15px",color:C.grisFonce,resize:"vertical",outline:"none",lineHeight:1.5,fontFamily:"inherit"}}/>
-          <div style={{display:"flex",justifyContent:"flex-end",marginTop:16}}>
-            <button onClick={nxt} onMouseEnter={e=>e.target.style.background=C.vertClair} onMouseLeave={e=>e.target.style.background=C.vert}
-              style={{background:C.vert,color:C.blanc,border:"none",padding:"12px 32px",fontSize:"14px",fontWeight:600,cursor:"pointer",transition:"background 0.2s"}}>
-              {opn[q.id]?.trim()?"Continuer →":"Passer →"}
-            </button>
-          </div>
-        </div>}
-
-        {isM&&<div style={{display:"flex",justifyContent:"flex-end"}}>
-          <button onClick={nxt} onMouseEnter={e=>e.target.style.background=C.vertClair} onMouseLeave={e=>e.target.style.background=C.vert}
-            style={{background:C.vert,color:C.blanc,border:"none",padding:"12px 32px",fontSize:"14px",fontWeight:600,cursor:"pointer",transition:"background 0.2s"}}>
-            Voir mes résultats →
-          </button>
-        </div>}
-      </div>
-
-      {stp>0&&<div style={{padding:"0 20px 24px",maxWidth:640,margin:"0 auto",width:"100%"}}>
-        <button onClick={bck} style={{background:"none",border:"none",color:C.gris,fontSize:"13px",cursor:"pointer",padding:"8px 0"}}>← Revenir</button>
-      </div>}
-    </div>
-  );
+  GmailApp.sendEmail(EMAIL_ADMIN, sujet, "", { htmlBody: corps });
 }
 
-ReactDOM.render(React.createElement(App), document.getElementById("root"));
-</script>
-</body>
-</html>
+function axeRow(nom, score) {
+  const bg = score <= 8 ? "#ED7565" : score <= 15 ? "#F9B233" : "#0E4238";
+  return `
+    <tr>
+      <td style="padding: 8px 12px; border-bottom: 1px solid #E8E0D0;">${nom}</td>
+      <td style="padding: 8px 12px; border-bottom: 1px solid #E8E0D0; text-align: right;">
+        <span style="background: ${bg}; color: white; padding: 2px 8px; font-size: 12px; font-weight: 700;">${score}/30</span>
+      </td>
+    </tr>
+  `;
+}
+
+// ── EMAIL PARTICIPANT ────────────────────────────────────────
+
+function envoyerEmailParticipant(data) {
+  const pct = Math.round(data.score_total / data.score_max * 100);
+  
+  const zonesTexte = {
+    "Robuste":  "Votre modèle présente des bases solides. L'enjeu : vérifier que votre Codir partage cette lecture — et anticiper les chocs à venir avant qu'ils ne testent cette robustesse.",
+    "Vigilant": "Vous avez conscience de certaines vulnérabilités, mais des angles morts subsistent. La question n'est pas si un choc arrivera, mais quand. Mieux vaut le simuler que le subir.",
+    "Exposé":   "Votre modèle repose sur des dépendances fortes et peu diversifiées. Un choc sur votre chaîne — client, fournisseur, énergie, compétence — aurait un impact structurel.",
+    "Fragile":  "Plusieurs fondations de votre modèle sont vulnérables simultanément. La pérennité de votre entreprise mérite une attention stratégique immédiate.",
+  };
+
+  const zoneColor = {
+    "Robuste": "#0E4238", "Vigilant": "#F9B233", "Exposé": "#ED7565", "Fragile": "#8B2020"
+  };
+
+  const sujet = `Votre diagnostic de robustesse — ${data.zone} (${pct}%)`;
+
+  const corps = `
+    <div style="font-family: Georgia, serif; max-width: 560px; margin: 0 auto; color: #3D3B37;">
+
+      <div style="background: #0E4238; padding: 32px 28px; margin-bottom: 0;">
+        <p style="color: #F9B233; font-size: 11px; letter-spacing: 3px; text-transform: uppercase; margin: 0 0 12px;">
+          Open Lande — Le test de robustesse
+        </p>
+        <h1 style="color: #FFFFFF; font-size: 24px; margin: 0 0 8px; font-weight: 700; line-height: 1.3;">
+          Votre diagnostic de robustesse
+        </h1>
+        <p style="color: #E8E0D0; font-size: 14px; margin: 0; font-style: italic;">
+          Pour que votre organisation soit encore là dans 10 ans — durablement.
+        </p>
+      </div>
+
+      <div style="background: ${zoneColor[data.zone] || "#ED7565"}; padding: 20px 28px; margin-bottom: 24px;">
+        <p style="color: rgba(255,255,255,0.8); font-size: 11px; letter-spacing: 2px; text-transform: uppercase; margin: 0 0 6px;">Votre profil</p>
+        <p style="color: #FFFFFF; font-size: 28px; font-weight: 700; margin: 0 0 4px;">${data.zone}</p>
+        <p style="color: rgba(255,255,255,0.8); font-size: 14px; margin: 0;">${data.score_total}/${data.score_max} points · ${pct}% du score maximal</p>
+      </div>
+
+      <div style="padding: 0 4px 24px;">
+
+        <div style="background: #F6F0E7; border-left: 4px solid ${zoneColor[data.zone] || "#ED7565"}; padding: 16px 20px; margin-bottom: 24px;">
+          <p style="font-size: 15px; line-height: 1.7; margin: 0;">${zonesTexte[data.zone] || ""}</p>
+        </div>
+
+        <h3 style="font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: #8A8579; margin: 0 0 12px;">Votre profil sur 5 axes</h3>
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 28px; font-size: 13px;">
+          ${axeRow("Concentration & dépendances", data.axe_concentration)}
+          ${axeRow("Visibilité & chaîne de valeur", data.axe_visibilite)}
+          ${axeRow("Exposition physique & ressources", data.axe_exposition)}
+          ${axeRow("Capacité d'évolution", data.axe_evolution)}
+          ${axeRow("Capital immatériel & potentiel", data.axe_capital)}
+        </table>
+
+        <div style="background: #0E4238; padding: 24px 28px; margin-bottom: 24px;">
+          <p style="color: #E8E0D0; font-size: 16px; font-style: italic; line-height: 1.6; margin: 0 0 8px;">
+            Ce diagnostic mesure votre lucidité individuelle.
+          </p>
+          <p style="color: #F9B233; font-size: 17px; font-weight: 700; line-height: 1.4; margin: 0;">
+            Le test de robustesse mesure celle de votre Codir.<br>
+            <span style="color: #FFFFFF; font-size: 15px; font-weight: 400; font-style: italic;">Et c'est rarement la même.</span>
+          </p>
+        </div>
+
+        <div style="border-top: 3px solid #F9B233; padding: 20px 0 0;">
+          <p style="font-size: 14px; line-height: 1.7; margin: 0 0 16px;">
+            <strong>Le test de robustesse</strong> est une simulation stratégique de 3 heures avec votre Codir — cartographie de la chaîne de valeur, scénario de crise, décisions à 30 jours.
+          </p>
+          <a href="mailto:${EMAIL_ADMIN}?subject=Échange de cadrage — Test de robustesse" 
+             style="display: inline-block; background: #F9B233; color: #0E4238; padding: 12px 24px; font-weight: 700; font-size: 14px; text-decoration: none;">
+            Réserver un échange de cadrage →
+          </a>
+        </div>
+
+        <p style="font-size: 12px; color: #8A8579; border-top: 1px solid #E8E0D0; padding-top: 16px; margin-top: 24px;">
+          Open Lande · <a href="https://openlande.co" style="color: #0E4238;">openlande.co</a>
+        </p>
+      </div>
+    </div>
+  `;
+
+  GmailApp.sendEmail(data.email, sujet, "", {
+    htmlBody: corps,
+    name: "Open Lande — Le test de robustesse",
+    replyTo: EMAIL_ADMIN,
+  });
+}
+
+function doGet(e) {
+  return ContentService
+    .createTextOutput("Le collecteur de diagnostics Open Lande est actif.")
+    .setMimeType(ContentService.MimeType.TEXT);
+}

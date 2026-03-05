@@ -249,24 +249,3 @@ function doGet(e) {
     .createTextOutput("Le collecteur de diagnostics Open Lande est actif.")
     .setMimeType(ContentService.MimeType.TEXT);
 }
-
-function testerEmail() {
-  const data = {
-    timestamp: new Date().toISOString(),
-    mode: "complet",
-    email: "walter@openlande.co",
-    zone: "Exposé",
-    score_total: 66,
-    score_max: 150,
-    axe_concentration: 14,
-    axe_visibilite: 11,
-    axe_exposition: 16,
-    axe_evolution: 10,
-    axe_capital: 15,
-    open1: "Test question ouverte",
-    open2: "",
-    open3: ""
-  };
-  envoyerEmailAdmin(data);
-  envoyerEmailParticipant(data);
-}
